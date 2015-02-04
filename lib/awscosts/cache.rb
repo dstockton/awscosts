@@ -17,6 +17,7 @@ module AWSCosts::Cache
     cache["#{base_uri}#{uri}"] ||= begin
       extract_json_from_callback(HTTParty.get("#{base_uri}#{uri}").body)
     rescue NoMethodError
+      puts $?, $!
       attempts += 1
       retry if attempts < 5
       raise "Failed to retrieve or parse data for #{base_uri}#{uri}"
@@ -31,7 +32,7 @@ module AWSCosts::Cache
   end
 
   def extract_json_from_callback body
-    body.match /^.*callback\((\{.*\})\);$/
+    body.match /^.*callback\((\{.*\})\);?$/m
     body = $1
 
     # Handle "json" with keys that are not quoted

@@ -1,4 +1,5 @@
 require 'awscosts/ec2_on_demand'
+require 'awscosts/ec2_spot'
 require 'awscosts/ec2_reserved_instances'
 require 'awscosts/ec2_elb'
 require 'awscosts/ec2_ebs'
@@ -18,7 +19,12 @@ class AWSCosts::EC2
 
   def on_demand(type)
     raise ArgumentError.new("Unknown platform: #{type}") if TYPES[type].nil?
-    AWSCosts::EC2OnDemand.fetch(TYPES[type], self.region.price_mapping)
+    AWSCosts::EC2OnDemand.fetch(TYPES[type], self.region.name)
+  end
+
+  def spot(type)
+    raise ArgumentError.new("Unknown platform: #{type}") if TYPES[type].nil?
+    AWSCosts::EC2Spot.fetch(TYPES[type], self.region.price_mapping)
   end
 
   def reserved(type, utilisation = :light)
