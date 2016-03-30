@@ -3,8 +3,12 @@ require 'json'
 
 class AWSCosts::EBS
 
-  TYPES = { 'ebsVols' => :standard, 'ebsPIOPSVols' => :provisioned_iops,
-            'ebsSnapsToS3' => :snapshots_to_s3 }
+  TYPES = {
+            'Amazon EBS Magnetic volumes' => :standard,
+            'Amazon EBS General Purpose (SSD) volumes' => :gp2,
+            'Amazon EBS Provisioned IOPS (SSD) volumes' => :io1,
+            'ebsSnapsToS3' => :snapshots_to_s3
+  }
 
   def initialize data
     @data= data
