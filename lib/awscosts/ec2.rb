@@ -13,6 +13,18 @@ class AWSCosts::EC2
   TYPES = { windows: 'mswin', linux: 'linux', windows_with_sql: 'mswinSQL',
             windows_with_sql_web: 'mswinSQLWeb', rhel: 'rhel', sles: 'sles' }
 
+  REGION_MAPPING = {
+    'us-east-1' => "us-east",
+    'us-west-1' => "us-west",
+    'us-west-2' => "us-west-2",
+    'eu-west-1' => "eu-ireland",
+    'eu-central-1' => "eu-central-1",
+    'ap-southeast-1' => "apac-sin",
+    'ap-southeast-2' =>"apac-syd",
+    'ap-northeast-1' =>"apac-tokyo",
+    'sa-east-1' => "sa-east-1"
+  }
+
   def initialize region
     @region = region
   end
@@ -35,21 +47,19 @@ class AWSCosts::EC2
   end
 
   def elb
-    AWSCosts::ELB.fetch(self.region.price_mapping)
+    AWSCosts::ELB.fetch(self.region.name)
   end
 
   def ebs
-    AWSCosts::EBS.fetch(self.region.price_mapping)
+    AWSCosts::EBS.fetch(REGION_MAPPING[self.region.name])
   end
 
   def ebs_optimized
-    r = self.region.name
-    r = 'us-east' if r == 'us-east-1'
-    AWSCosts::EBSOptimized.fetch(r)
+    AWSCosts::EBSOptimized.fetch(REGION_MAPPING[self.region.name])
   end
 
   def elastic_ips
-    AWSCosts::ElasticIPs.fetch(self.region.price_mapping)
+    AWSCosts::ElasticIPs.fetch(REGION_MAPPING[self.region.name])
   end
 end
 

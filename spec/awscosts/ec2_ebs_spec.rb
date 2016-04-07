@@ -3,40 +3,28 @@ require 'spec_helper'
 describe AWSCosts::EBS do
   use_vcr_cassette
 
-  subject { AWSCosts.region('ap-southeast-2').ec2.ebs}
+  AWSCosts::Region::SUPPORTED.keys.each do |region|
+    context "in the region of #{region}" do
+      subject { AWSCosts.region(region).ec2.ebs}
 
-  describe 'standard EBS volume' do
-    let(:price) { subject.price(:standard) }
+      ['Amazon EBS General Purpose (SSD) volumes',
+       'Amazon EBS Provisioned IOPS (SSD) volumes',
+       'Amazon EBS Magnetic volumes', 'ebsSnapsToS3'].each do |name|
 
-    it 'should provide price per GB / month for provisioned storage' do
-      price['perGBmoProvStorage'].should > 0
-    end
+          describe "for '#{name}'" do
+            let(:price) { subject.price.find { |p| p['name'] == name } }
 
-    it 'should provide price per Million requests per month' do
-      price['perMMIOreq'].should > 0
-    end
+            it 'should provide a name' do
+              price['name'].should_not be_nil
+            end
+
+            it 'should provide values ' do
+              price['values'].should_not be_nil
+            end
+          end
+       end
+     end
   end
-
-  describe 'provisioned IOPS price' do
-    let(:price) { subject.price(:provisioned_iops) }
-
-    it 'should provide price per GB / month for provisioned storage' do
-      price['perGBmoProvStorage'].should > 0
-    end
-
-    it 'should provide a price per PIOPS' do
-      price['perPIOPSreq'].should > 0
-    end
-  end
-
-  describe 'Snapshots to S3' do
-    let(:price) { subject.price(:snapshots_to_s3) }
-
-    it 'should provide a price per GB stored / month' do
-      price['perGBmoDataStored'].should > 0
-    end
-  end
-
 end
 
 

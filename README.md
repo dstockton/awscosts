@@ -74,15 +74,13 @@ Pricing is also available for data transfer
 
 And request pricing
 
-    region.s3.request.price
+    region.s3.requests.price
 
 ### EBS
 
-To find the price of Amazon EBS standard volumes in the Ireland region.
+To find the price of Amazon EBS volumes in the Ireland region.
 
-    AWSCosts.region('eu-west-1').ec2.ebs.price(:standard)
-
-`.price` also supports `:provisioned_iops` and `:snapshots_to_s3`
+    AWSCosts.region('eu-west-1').ec2.ebs.price
 
 ### EIP
 
