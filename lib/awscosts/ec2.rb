@@ -36,7 +36,7 @@ class AWSCosts::EC2
 
   def spot(type)
     raise ArgumentError.new("Unknown platform: #{type}") if TYPES[type].nil?
-    AWSCosts::EC2Spot.fetch(TYPES[type], self.region.price_mapping)
+    AWSCosts::EC2Spot.fetch(TYPES[type], REGION_MAPPING[self.region.name])
   end
 
   def reserved(type, utilisation = :light)
