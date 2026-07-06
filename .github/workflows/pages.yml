@@ -2,7 +2,7 @@ name: Deploy Twisted Corner Detector to Pages
 
 on:
   push:
-    branches: ["claude/rubiks-cube-corner-detector-69mnak"]
+    branches: ["master"]
     paths:
       - "rubiks-corner-detector/**"
       - ".github/workflows/pages.yml"
