@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>Twisted Corner Detector</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#191d26; --panel2:#20252f; --line:#2c313d;
+    --txt:#eef1f6; --muted:#9aa3b2; --accent:#4f8cff; --good:#39d98a;
+    --bad:#ff5c72; --warn:#ffc24b; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+  .app{max-width:520px;margin:0 auto;padding:16px 16px calc(24px + env(safe-area-inset-bottom));min-height:100vh}
+  h1{font-size:1.35rem;margin:.2em 0 .1em;letter-spacing:-.01em}
+  h2{font-size:1.05rem;margin:1.1em 0 .4em}
+  p{line-height:1.5;color:var(--muted);margin:.5em 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:12px 0}
+  button{font:inherit;border:0;border-radius:10px;padding:13px 16px;background:var(--accent);
+    color:#fff;font-weight:600;cursor:pointer;width:100%;transition:transform .05s,opacity .2s}
+  button:active{transform:scale(.985)}
+  button.secondary{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
+  button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+  button:disabled{opacity:.45;cursor:default}
+  .row{display:flex;gap:10px}
+  .row>button{flex:1}
+  .hidden{display:none !important}
+  .pill{display:inline-block;font-size:.72rem;font-weight:700;letter-spacing:.03em;
+    padding:3px 9px;border-radius:999px;text-transform:uppercase}
+  .pill.good{background:rgba(57,217,138,.16);color:var(--good)}
+  .pill.bad{background:rgba(255,92,114,.16);color:var(--bad)}
+  .pill.warn{background:rgba(255,194,75,.16);color:var(--warn)}
+  small{color:var(--muted)}
+
+  /* camera */
+  .stage{position:relative;border-radius:var(--radius);overflow:hidden;background:#000;aspect-ratio:1/1}
+  video,#grab{width:100%;height:100%;object-fit:cover;display:block}
+  #overlay{position:absolute;inset:0;pointer-events:none}
+  .capbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0 4px}
+  .dots{display:flex;gap:6px}
+  .dot{width:11px;height:11px;border-radius:50%;background:var(--line);border:2px solid transparent}
+  .dot.done{background:var(--good)}
+  .dot.active{border-color:var(--accent);background:var(--panel2)}
+  .facelabel{font-weight:700;font-size:1.1rem}
+  .hint{font-size:.86rem}
+
+  /* net */
+  .net{display:grid;grid-template-columns:repeat(12,1fr);gap:3px;max-width:100%;margin:8px auto}
+  .facegrid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:3px}
+  .st{aspect-ratio:1/1;border-radius:4px;border:1px solid rgba(255,255,255,.14);cursor:pointer;position:relative}
+  .st.tw{box-shadow:0 0 0 3px var(--warn),0 0 12px 2px var(--warn);z-index:2}
+  .st .c{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:700;color:rgba(0,0,0,.55)}
+  .netwrap{overflow-x:auto}
+  .analysis .line{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+  .analysis .line:last-child{border-bottom:0}
+  .analysis .k{color:var(--muted);font-size:.92rem}
+  .analysis .v{font-weight:700}
+  .verdict{border-radius:var(--radius);padding:16px;margin:10px 0;text-align:center}
+  .verdict.ok{background:rgba(57,217,138,.12);border:1px solid rgba(57,217,138,.4)}
+  .verdict.no{background:rgba(255,92,114,.12);border:1px solid rgba(255,92,114,.4)}
+  .verdict h2{margin:.1em 0}
+  .fix{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0}
+  .fix .cc{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+  .swatch{width:16px;height:16px;border-radius:4px;border:1px solid rgba(255,255,255,.25);flex:0 0 auto}
+  .swatches{display:flex;gap:5px;align-items:center}
+  .twist{font-weight:800}
+  .cw{color:var(--accent)} .ccw{color:var(--warn)}
+  ul.reasons{margin:.4em 0;padding-left:1.1em}
+  ul.reasons li{margin:.3em 0;line-height:1.4}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .legend .item{display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--muted)}
+  .steps{counter-reset:s;padding-left:0;list-style:none}
+  .steps li{counter-increment:s;position:relative;padding:8px 0 8px 34px;line-height:1.45}
+  .steps li::before{content:counter(s);position:absolute;left:0;top:7px;width:22px;height:22px;
+    background:var(--accent);color:#fff;border-radius:50%;text-align:center;font-size:.8rem;font-weight:700;line-height:22px}
+  a{color:var(--accent)}
+  .footer{margin-top:22px;text-align:center;font-size:.78rem}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ===== INTRO ===== -->
+  <section id="intro">
+    <h1>🧩 Twisted Corner Detector</h1>
+    <p>Scan your Rubik's cube with your phone camera. This tool figures out whether a
+    <strong>corner is twisted the wrong way</strong> — the reassembly bug that makes a cube
+    impossible to solve — and tells you exactly which corner to twist and which way.</p>
+
+    <div class="card">
+      <h2>Before you start</h2>
+      <p>• Use good, even lighting. Avoid glare on the stickers.</p>
+      <p>• You'll scan all 6 faces, one at a time, following the on-screen prompts.</p>
+      <p>• Colors are learned from your cube's <em>center</em> stickers, so it doesn't matter
+      that your white stickers are <strong>black</strong> — it just calibrates to whatever it sees.</p>
+      <p>• After scanning you can tap any square to correct a mis-read color.</p>
+    </div>
+
+    <button id="startCam">Start camera & scan</button>
+    <button id="startManual" class="ghost" style="margin-top:10px">Enter cube manually instead</button>
+    <p id="camNote" class="hint" style="margin-top:10px"></p>
+  </section>
+
+  <!-- ===== CAPTURE ===== -->
+  <section id="capture" class="hidden">
+    <div class="capbar">
+      <div class="facelabel">Scan: <span id="faceName">Up</span></div>
+      <div class="dots" id="dots"></div>
+    </div>
+    <div class="stage">
+      <video id="video" playsinline autoplay muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
+    <p class="hint" id="faceHint"></p>
+    <div class="row">
+      <button id="capBtn">Capture face</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="backFace" class="secondary">Back</button>
+      <button id="cancelScan" class="ghost">Cancel</button>
+    </div>
+    <canvas id="work" class="hidden"></canvas>
+  </section>
+
+  <!-- ===== RESULT ===== -->
+  <section id="result" class="hidden">
+    <h1>Your cube</h1>
+    <p class="hint">Tap any square to correct its color. The analysis updates live.</p>
+    <div class="netwrap"><div class="net" id="net"></div></div>
+    <div class="legend" id="legend"></div>
+
+    <div id="verdict"></div>
+
+    <div class="card analysis" id="analysis"></div>
+
+    <div id="fixes"></div>
+
+    <div class="row" style="margin-top:14px">
+      <button id="rescan" class="secondary">Re-scan</button>
+    </div>
+  </section>
+
+  <div class="footer"><small>Runs entirely on your device — nothing is uploaded.</small></div>
+</div>
+
+<script>
+/* ============================================================
+   Kociemba facelet model
+   Faces order: U R F D L B.  Facelets 0..53, row-major per face.
+   Centers: U=4 R=13 F=22 D=31 L=40 B=49
+   ============================================================ */
+const FACES = ['U','R','F','D','L','B'];
+const FACE_NAMES = {U:'Up (top)',R:'Right',F:'Front',D:'Down (bottom)',L:'Left',B:'Back'};
+const CENTER = {U:4,R:13,F:22,D:31,L:40,B:49};
+
+// Instructions assume you keep ONE reference orientation and rotate the cube.
+const FACE_HINT = {
+  U:'Hold the cube in front of you, then tilt the TOP toward the camera so you look straight down at it. Keep the same side facing your body as the “front”. The bottom row of the grid is the edge nearest you.',
+  R:'Turn the cube so the RIGHT-hand face points at the camera. Keep the top of the cube up.',
+  F:'Show the FRONT face flat to the camera, top up.',
+  D:'Tilt the BOTTOM of the cube up toward the camera. Keep the front side nearest you — the top row of the grid is the edge nearest you.',
+  L:'Turn the cube so the LEFT-hand face points at the camera. Keep the top up.',
+  B:'Show the BACK face to the camera, top up (turn the cube 180°).'
+};
+
+const cornerFacelet = [
+  [8,9,20],[6,18,38],[0,36,47],[2,45,11],
+  [29,26,15],[27,24,44],[33,42,53],[35,17,51]
+];
+const cornerName = ['URF','UFL','ULB','UBR','DFR','DLF','DBL','DRB'];
+
+const edgeFacelet = [
+  [5,10],[7,19],[3,37],[1,46],[32,16],[28,25],
+  [30,43],[34,52],[23,12],[21,41],[50,39],[48,14]
+];
+const edgeName = ['UR','UF','UL','UB','DR','DF','DL','DB','FR','FL','BL','BR'];
+
+/* ---- app state ---- */
+let stream=null, curFaceIdx=0;
+const sampled = {};              // faceKey -> [9 rgb]
+let classes = null;              // [{key,rgb,name}] length 6
+let facelets = null;             // length 54, class index 0..5
+
+/* ---- DOM ---- */
+const $ = id => document.getElementById(id);
+const secIntro=$('intro'), secCap=$('capture'), secRes=$('result');
+const video=$('video'), overlay=$('overlay'), work=$('work');
+
+/* ============================================================
+   Color helpers
+   ============================================================ */
+function dist2(a,b){const dr=a[0]-b[0],dg=a[1]-b[1],db=a[2]-b[2];return dr*dr+dg*dg+db*db;}
+function rgbCss(c){return `rgb(${c[0]|0},${c[1]|0},${c[2]|0})`;}
+
+// crude human name for a measured RGB (labels only — geometry never depends on it)
+const PALETTE=[
+  {n:'black',c:[25,25,25]},{n:'white',c:[235,235,235]},{n:'grey',c:[130,130,130]},
+  {n:'red',c:[190,40,40]},{n:'orange',c:[225,120,25]},{n:'yellow',c:[235,210,40]},
+  {n:'green',c:[40,170,80]},{n:'blue',c:[40,90,200]}
+];
+function nameColor(rgb){
+  let best=PALETTE[0],bd=1e9;
+  for(const p of PALETTE){const d=dist2(rgb,p.c);if(d<bd){bd=d;best=p;}}
+  return best.n;
+}
+
+/* ============================================================
+   Camera
+   ============================================================ */
+async function startCamera(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:1280}},
+      audio:false
+    });
+    video.srcObject=stream;
+    await video.play();
+    secIntro.classList.add('hidden');
+    secCap.classList.remove('hidden');
+    curFaceIdx=0; buildDots(); showFace();
+    requestAnimationFrame(drawOverlay);
+  }catch(err){
+    $('camNote').textContent = 'Camera unavailable ('+err.name+'). '+
+      (location.protocol!=='https:'&&location.hostname!=='localhost'
+        ? 'A camera needs HTTPS — open this page over https or use “Enter manually”.'
+        : 'Check permissions, or use “Enter manually”.');
+  }
+}
+function stopCamera(){ if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;} }
+
+function buildDots(){
+  $('dots').innerHTML='';
+  FACES.forEach((f,i)=>{
+    const d=document.createElement('div');
+    d.className='dot'+(sampled[f]?' done':'')+(i===curFaceIdx?' active':'');
+    $('dots').appendChild(d);
+  });
+}
+function showFace(){
+  const f=FACES[curFaceIdx];
+  $('faceName').textContent=FACE_NAMES[f];
+  $('faceHint').textContent=FACE_HINT[f];
+  $('backFace').disabled = curFaceIdx===0;
+  buildDots();
+}
+
+// draw a 3x3 sampling grid over the video
+function drawOverlay(){
+  if(secCap.classList.contains('hidden'))return;
+  const w=overlay.width=overlay.clientWidth, h=overlay.height=overlay.clientHeight;
+  const ctx=overlay.getContext('2d');
+  ctx.clearRect(0,0,w,h);
+  const side=Math.min(w,h)*0.82, ox=(w-side)/2, oy=(h-side)/2, cell=side/3;
+  ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=2;
+  ctx.strokeRect(ox,oy,side,side);
+  ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=1.5;
+  for(let i=1;i<3;i++){
+    ctx.beginPath();ctx.moveTo(ox+i*cell,oy);ctx.lineTo(ox+i*cell,oy+side);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(ox,oy+i*cell);ctx.lineTo(ox+side,oy+i*cell);ctx.stroke();
+  }
+  // sample dots
+  ctx.fillStyle='rgba(255,255,255,.35)';
+  for(let r=0;r<3;r++)for(let c=0;c<3;c++){
+    ctx.beginPath();ctx.arc(ox+c*cell+cell/2,oy+r*cell+cell/2,4,0,7);ctx.fill();
+  }
+  requestAnimationFrame(drawOverlay);
+}
+
+function captureFace(){
+  const vw=video.videoWidth, vh=video.videoHeight;
+  if(!vw){return;}
+  work.width=vw;work.height=vh;
+  const ctx=work.getContext('2d',{willReadFrequently:true});
+  ctx.drawImage(video,0,0,vw,vh);
+  // same geometry as overlay (object-fit:cover -> square centered)
+  const side=Math.min(vw,vh)*0.82, ox=(vw-side)/2, oy=(vh-side)/2, cell=side/3;
+  const arr=[];
+  for(let r=0;r<3;r++)for(let c=0;c<3;c++){
+    const cx=ox+c*cell+cell/2, cy=oy+r*cell+cell/2;
+    const s=Math.max(6,cell*0.28);
+    const d=ctx.getImageData(cx-s/2,cy-s/2,s,s).data;
+    let R=0,G=0,B=0,n=0;
+    for(let i=0;i<d.length;i+=4){R+=d[i];G+=d[i+1];B+=d[i+2];n++;}
+    arr.push([R/n,G/n,B/n]);
+  }
+  sampled[FACES[curFaceIdx]]=arr;
+  if(curFaceIdx<5){curFaceIdx++;showFace();}
+  else finishScan();
+}
+
+/* ============================================================
+   Classify -> build facelets
+   ============================================================ */
+function classifyFromCenters(){
+  // reference = each face's center sample (index 4)
+  classes = FACES.map(f=>{
+    const c=sampled[f][4];
+    return {key:f, rgb:[c[0],c[1],c[2]], name:nameColor(c)};
+  });
+  facelets = new Array(54);
+  FACES.forEach((f,fi)=>{
+    sampled[f].forEach((rgb,ci)=>{
+      let best=0,bd=1e18;
+      classes.forEach((cl,k)=>{const d=dist2(rgb,cl.rgb);if(d<bd){bd=d;best=k;}});
+      facelets[fi*9+ci]=best;
+    });
+  });
+}
+function finishScan(){
+  stopCamera();
+  classifyFromCenters();
+  secCap.classList.add('hidden');
+  secRes.classList.remove('hidden');
+  renderNet();renderLegend();analyze();
+  window.scrollTo(0,0);
+}
+
+/* ============================================================
+   Editable net
+   ============================================================ */
+// net layout: [face, rowStart, colStart] on a 9x12 grid
+const NET_POS={U:[0,3],L:[3,0],F:[3,3],R:[3,6],B:[3,9],D:[6,3]};
+function keyOf(i){return classes[facelets[i]].key;}
+function renderNet(){
+  const net=$('net');net.innerHTML='';
+  FACES.forEach(f=>{
+    const [r,c]=NET_POS[f];
+    const g=document.createElement('div');
+    g.className='facegrid';
+    g.style.gridColumn=`${c+1}/span 3`;
+    g.style.gridRow=`${r+1}/span 3`;
+    const base=FACES.indexOf(f)*9;
+    for(let k=0;k<9;k++){
+      const idx=base+k;
+      const st=document.createElement('div');
+      st.className='st';st.dataset.idx=idx;
+      st.style.background=rgbCss(classes[facelets[idx]].rgb);
+      const lab=document.createElement('div');lab.className='c';
+      lab.textContent = (k===4)?f:'';           // mark centers
+      st.appendChild(lab);
+      st.addEventListener('click',()=>cycle(idx));
+      g.appendChild(st);
+    }
+    net.appendChild(g);
+  });
+}
+function cycle(idx){
+  if([4,13,22,31,40,49].includes(idx))return; // don't edit centers
+  facelets[idx]=(facelets[idx]+1)%6;
+  renderNet();highlightTwisted();analyze();
+}
+function renderLegend(){
+  const l=$('legend');l.innerHTML='';
+  classes.forEach(cl=>{
+    const it=document.createElement('div');it.className='item';
+    it.innerHTML=`<span class="swatch" style="background:${rgbCss(cl.rgb)}"></span>${cl.name} (${cl.key})`;
+    l.appendChild(it);
+  });
+}
+
+/* ============================================================
+   Cube analysis
+   ============================================================ */
+function permParity(perm){
+  const seen=new Array(perm.length).fill(false);let swaps=0;
+  for(let i=0;i<perm.length;i++){
+    if(seen[i])continue;let j=i,len=0;
+    while(!seen[j]){seen[j]=true;j=perm[j];len++;}
+    swaps+=len-1;
+  }
+  return swaps%2;
+}
+
+function analyze(){
+  const k = i => keyOf(i);
+
+  // ---- color counts ----
+  const counts={U:0,R:0,F:0,D:0,L:0,B:0};
+  for(let i=0;i<54;i++)counts[k(i)]++;
+  const countsOk = FACES.every(f=>counts[f]===9);
+
+  // ---- corners: orientation + permutation ----
+  const cornerColorSets = cornerName.map(nm=>nm.split('').sort().join(''));
+  const cp=[], co=[]; let cornerBad=false;
+  cornerFacelet.forEach((fl)=>{
+    const cols=fl.map(k);
+    // orientation: index of the U/D facelet
+    let ori=-1;
+    for(let j=0;j<3;j++) if(cols[j]==='U'||cols[j]==='D') ori=j;
+    if(ori<0){cornerBad=true;}
+    co.push(ori<0?0:ori);
+    // which solved corner is this (by color set)
+    const key=cols.slice().sort().join('');
+    const p=cornerColorSets.indexOf(key);
+    if(p<0)cornerBad=true;
+    cp.push(p);
+  });
+  const twistSum = co.reduce((a,b)=>a+((b<0?0:b)),0)%3;
+
+  // ---- edges: orientation + permutation ----
+  const edgeColorSets = edgeName.map(nm=>nm.split('').sort().join(''));
+  const ep=[], eo=[]; let edgeBad=false;
+  edgeFacelet.forEach(fl=>{
+    const a=k(fl[0]), b=k(fl[1]);
+    let ori;
+    if(a==='U'||a==='D')ori=0;
+    else if(b==='U'||b==='D')ori=1;
+    else if(a==='F'||a==='B')ori=0;
+    else ori=1;
+    eo.push(ori);
+    const key=[a,b].sort().join('');
+    const p=edgeColorSets.indexOf(key);
+    if(p<0)edgeBad=true;
+    ep.push(p);
+  });
+  const flipSum = eo.reduce((a,b)=>a+b,0)%2;
+
+  const permValid = !cornerBad && !edgeBad &&
+        new Set(cp).size===8 && new Set(ep).size===12;
+  const cpar = permValid?permParity(cp):-1;
+  const epar = permValid?permParity(ep):-1;
+  const parityOk = permValid && cpar===epar;
+
+  const twistOk = twistSum===0;
+  const flipOk  = flipSum===0;
+  const solvable = countsOk && permValid && twistOk && flipOk && parityOk;
+
+  renderAnalysis({counts,countsOk,permValid,twistSum,flipSum,parityOk,solvable,cpar,epar});
+  renderFixes({permValid,countsOk,twistSum,flipSum,parityOk,solvable,cp,co,ep,eo});
+  highlightTwisted(co,twistSum,permValid);
+}
+
+function renderAnalysis(a){
+  const pill=(ok,txt)=>`<span class="pill ${ok?'good':'bad'}">${txt}</span>`;
+  const line=(k,v)=>`<div class="line"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+  let counts=FACES.map(f=>`${classes[FACES.indexOf(f)].name}:${a.counts[f]}`).join(' · ');
+  $('analysis').innerHTML =
+    line('Sticker counts (need 9 each)', pill(a.countsOk,a.countsOk?'OK':'off'))+
+    `<div class="line"><span class="k" style="font-size:.78rem">${counts}</span><span></span></div>`+
+    line('All 20 pieces valid', pill(a.permValid,a.permValid?'OK':'invalid'))+
+    line('Corner-twist parity (Σ mod 3)', pill(a.twistSum===0,a.twistSum===0?'0 — OK':a.twistSum))+
+    line('Edge-flip parity (Σ mod 2)', pill(a.flipSum===0,a.flipSum===0?'0 — OK':a.flipSum))+
+    line('Permutation parity match', pill(a.parityOk,a.parityOk?'OK':'mismatch'));
+}
+
+/* corner index -> the 3 facelet DOM squares, for highlighting */
+function highlightTwisted(co,twistSum,permValid){
+  document.querySelectorAll('.st.tw').forEach(e=>e.classList.remove('tw'));
+  if(co===undefined)return;
+  if(twistSum===0)return;               // no twist defect -> nothing to flag
+  // flag corners whose orientation != 0 (candidates for the twist fix)
+  cornerFacelet.forEach((fl,i)=>{
+    if(co[i]!==0){
+      fl.forEach(idx=>{
+        const el=document.querySelector(`.st[data-idx="${idx}"]`);
+        if(el)el.classList.add('tw');
+      });
+    }
+  });
+}
+
+function cornerColorSwatches(i){
+  return cornerFacelet[i].map(idx=>{
+    const cl=classes[facelets[idx]];
+    return `<span class="swatch" style="background:${rgbCss(cl.rgb)}" title="${cl.name}"></span>`;
+  }).join('');
+}
+function cornerColorNames(i){
+  return cornerFacelet[i].map(idx=>classes[facelets[idx]].name).join(', ');
+}
+
+function renderFixes(a){
+  const box=$('fixes');box.innerHTML='';
+  const v=$('verdict');
+
+  // ---- gross data problems first ----
+  if(!a.countsOk || !a.permValid){
+    v.className='verdict no';
+    v.innerHTML=`<h2>⚠️ Scan needs fixing</h2>
+      <p>Some colors were read incorrectly, so the cube can't be analysed yet.
+      Tap the squares in the net above to correct them (each color must appear exactly 9 times
+      and every piece must be a real cube piece).</p>`;
+    return;
+  }
+
+  if(a.solvable){
+    v.className='verdict ok';
+    v.innerHTML=`<h2>✅ This cube is solvable</h2>
+      <p>No twisted corner, no flipped edge, no swapped pieces. If you can't solve it,
+      it's a technique problem — not a broken cube.</p>`;
+    return;
+  }
+
+  // ---- unsolvable: explain why ----
+  v.className='verdict no';
+  const reasons=[];
+  if(a.twistSum!==0)reasons.push(`<strong>Twisted corner</strong> — the corner-orientation total is ${a.twistSum} (must be 0). At least one corner is physically rotated in its slot.`);
+  if(a.flipSum!==0)reasons.push(`<strong>Flipped edge</strong> — an edge piece is inserted the wrong way round.`);
+  if(!a.parityOk)reasons.push(`<strong>Swapped pieces</strong> — two pieces are exchanged (a single swap can't occur on an intact cube).`);
+  v.innerHTML=`<h2>❌ This cube can't be solved as-is</h2>
+    <ul class="reasons">${reasons.map(r=>'<li>'+r+'</li>').join('')}</ul>
+    <p>Fix the corner twist below to make it solvable.</p>`;
+
+  if(a.twistSum===0)return; // corner-specific guidance only when there's a twist defect
+
+  // Is the cube SOLVED except for corner twists? (each corner home, edges home & oriented)
+  const cornersHome = a.cp.every((p,i)=>p===i);
+  const edgesHome   = a.ep.every((p,i)=>p===i);
+  const edgesOriented = a.eo.every(o=>o===0);
+  const solvedExcept = cornersHome && edgesHome && edgesOriented;
+
+  const card=document.createElement('div');card.className='fix';
+
+  if(solvedExcept){
+    const twisted = a.co.map((o,i)=>({o,i})).filter(x=>x.o!==0);
+    card.innerHTML = `<h2 style="margin-top:0">How to twist it back</h2>
+      <p>Your cube is otherwise solved, so the twisted corner${twisted.length>1?'s are':' is'} easy to pinpoint.
+      Hold the cube looking at each corner below and twist it in place (pop it with a screwdriver or
+      pull it out and reinsert it rotated):</p>`;
+    twisted.forEach(({o,i})=>{
+      // ori 1 = U/D sticker one CW step off  -> twist CCW to fix
+      // ori 2 = two CW steps off             -> twist CW to fix
+      const dir = o===1 ? ['ccw','counter-clockwise (⟲)'] : ['cw','clockwise (⟳)'];
+      card.innerHTML += `
+        <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px">
+          <div class="cc"><div class="swatches">${cornerColorSwatches(i)}</div>
+            <span>the <b>${cornerColorNames(i)}</b> corner</span></div>
+          <div>Twist it <span class="twist ${dir[0]}">${dir[1]}</span> by one third of a turn.</div>
+        </div>`;
+    });
+  } else {
+    // general scramble with a twist defect
+    const need = a.twistSum===1 ? ['ccw','counter-clockwise (⟲)'] : ['cw','clockwise (⟳)'];
+    card.innerHTML = `<h2 style="margin-top:0">How to twist it back</h2>
+      <p>The cube is scrambled, so the twist is a whole-cube property rather than one obvious corner.
+      The net total is off by <b>${a.twistSum}</b>. To make the cube solvable you need one net
+      <span class="twist ${need[0]}">${need[1]}</span> third-turn of a single corner.</p>
+      <ol class="steps">
+        <li>Pick <em>any one</em> corner piece.</li>
+        <li>Pop it out (screwdriver under an edge) or twist it in place.</li>
+        <li>Reinsert/rotate it <span class="twist ${need[0]}">${need[1]}</span> by one third of a turn.</li>
+        <li>Re-scan — the corner-twist parity should now read <b>0</b>.</li>
+      </ol>
+      <p class="hint">Tip: solve the cube as far as you can first; whichever corner ends up
+      refusing to orient is the one that was tampered with.</p>`;
+    // still highlight nonzero-orientation corners as visual candidates
+    const cand = a.co.map((o,i)=>o!==0?cornerColorNames(i):null).filter(Boolean);
+    if(cand.length) card.innerHTML+=`<p class="hint">Highlighted candidates in the net: ${cand.join(' · ')}.</p>`;
+  }
+  box.appendChild(card);
+}
+
+/* ============================================================
+   Manual entry (no camera)
+   ============================================================ */
+function startManual(){
+  const seed=[[40,40,40],[200,50,50],[40,160,70],[230,205,50],[235,120,30],[45,80,200]];
+  classes=FACES.map((f,i)=>({key:f,rgb:seed[i].slice(),name:nameColor(seed[i])}));
+  facelets=new Array(54);
+  FACES.forEach((f,fi)=>{for(let k=0;k<9;k++)facelets[fi*9+k]=fi;}); // solved start
+  secIntro.classList.add('hidden');
+  secRes.classList.remove('hidden');
+  renderNet();renderLegend();analyze();
+}
+
+/* ============================================================
+   Wiring
+   ============================================================ */
+$('startCam').addEventListener('click',startCamera);
+$('startManual').addEventListener('click',startManual);
+$('capBtn').addEventListener('click',captureFace);
+$('backFace').addEventListener('click',()=>{if(curFaceIdx>0){curFaceIdx--;showFace();}});
+$('cancelScan').addEventListener('click',()=>{stopCamera();secCap.classList.add('hidden');secIntro.classList.remove('hidden');});
+$('rescan').addEventListener('click',()=>{
+  for(const k in sampled)delete sampled[k];
+  secRes.classList.add('hidden');startCamera();
+});
+
+if(location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1'){
+  $('camNote').textContent='';
+}else{
+  $('camNote').textContent='Note: phone cameras require HTTPS. Open this page over https for the scanner, or use “Enter manually”.';
+}
+</script>
+</body>
+</html>
