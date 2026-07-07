@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<title>2×2 Twisted Corner Detector</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#191d26; --panel2:#20252f; --line:#2c313d;
+    --txt:#eef1f6; --muted:#9aa3b2; --accent:#4f8cff; --good:#39d98a;
+    --bad:#ff5c72; --warn:#ffc24b; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+  .app{max-width:520px;margin:0 auto;padding:16px 16px calc(24px + env(safe-area-inset-bottom));min-height:100vh}
+  h1{font-size:1.35rem;margin:.2em 0 .1em;letter-spacing:-.01em}
+  h2{font-size:1.05rem;margin:1.1em 0 .4em}
+  p{line-height:1.5;color:var(--muted);margin:.5em 0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin:12px 0}
+  button{font:inherit;border:0;border-radius:10px;padding:13px 16px;background:var(--accent);
+    color:#fff;font-weight:600;cursor:pointer;width:100%;transition:transform .05s,opacity .2s}
+  button:active{transform:scale(.985)}
+  button.secondary{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
+  button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+  button:disabled{opacity:.45;cursor:default}
+  .row{display:flex;gap:10px}
+  .row>button{flex:1}
+  .hidden{display:none !important}
+  .pill{display:inline-block;font-size:.72rem;font-weight:700;letter-spacing:.03em;
+    padding:3px 9px;border-radius:999px;text-transform:uppercase}
+  .pill.good{background:rgba(57,217,138,.16);color:var(--good)}
+  .pill.bad{background:rgba(255,92,114,.16);color:var(--bad)}
+  small{color:var(--muted)}
+
+  .stage{position:relative;border-radius:var(--radius);overflow:hidden;background:#000;aspect-ratio:1/1}
+  video,#grab{width:100%;height:100%;object-fit:cover;display:block}
+  #overlay{position:absolute;inset:0;pointer-events:none}
+  .capbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 0 4px}
+  .dots{display:flex;gap:6px}
+  .dot{width:11px;height:11px;border-radius:50%;background:var(--line);border:2px solid transparent}
+  .dot.done{background:var(--good)}
+  .dot.active{border-color:var(--accent);background:var(--panel2)}
+  .facelabel{font-weight:700;font-size:1.1rem}
+  .hint{font-size:.86rem}
+
+  .net{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;max-width:340px;margin:8px auto}
+  .facegrid{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);gap:4px;position:relative}
+  .facegrid .flabel{position:absolute;top:-16px;left:0;font-size:.66rem;color:var(--muted);font-weight:700}
+  .st{aspect-ratio:1/1;border-radius:5px;border:1px solid rgba(255,255,255,.14);cursor:pointer}
+  .st.tw{box-shadow:0 0 0 3px var(--warn),0 0 12px 2px var(--warn);z-index:2}
+  .netwrap{overflow-x:auto;padding-top:18px}
+  .analysis .line{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+  .analysis .line:last-child{border-bottom:0}
+  .analysis .k{color:var(--muted);font-size:.92rem}
+  .analysis .v{font-weight:700}
+  .verdict{border-radius:var(--radius);padding:16px;margin:10px 0;text-align:center}
+  .verdict.ok{background:rgba(57,217,138,.12);border:1px solid rgba(57,217,138,.4)}
+  .verdict.no{background:rgba(255,92,114,.12);border:1px solid rgba(255,92,114,.4)}
+  .verdict h2{margin:.1em 0}
+  .fix{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px;margin:10px 0}
+  .fix .cc{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+  .swatch{width:16px;height:16px;border-radius:4px;border:1px solid rgba(255,255,255,.25);flex:0 0 auto}
+  .swatches{display:flex;gap:5px;align-items:center}
+  .twist{font-weight:800}
+  .cw{color:var(--accent)} .ccw{color:var(--warn)}
+  ul.reasons{margin:.4em 0;padding-left:1.1em}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+  .legend .item{display:flex;align-items:center;gap:6px;font-size:.82rem;color:var(--muted)}
+  .steps{counter-reset:s;padding-left:0;list-style:none}
+  .steps li{counter-increment:s;position:relative;padding:8px 0 8px 34px;line-height:1.45}
+  .steps li::before{content:counter(s);position:absolute;left:0;top:7px;width:22px;height:22px;
+    background:var(--accent);color:#fff;border-radius:50%;text-align:center;font-size:.8rem;font-weight:700;line-height:22px}
+  a{color:var(--accent)}
+  .footer{margin-top:22px;text-align:center;font-size:.78rem}
+  .switch{text-align:center;margin:2px 0 12px;font-size:.85rem}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <section id="intro">
+    <h1>🧩 2×2 Twisted Corner Detector</h1>
+    <p class="switch"><a href="../">← 3×3 version</a></p>
+    <p>Scan your <strong>2×2 (Pocket Cube)</strong> with your phone camera. It works out whether
+    a <strong>corner is twisted the wrong way</strong> — the reassembly bug that makes the cube
+    impossible to solve — and tells you exactly which corner to twist and which way.</p>
+
+    <div class="card">
+      <h2>How the 2×2 is different</h2>
+      <p>• A 2×2 has <strong>no centre pieces</strong>, so colours are learned by grouping all 24
+      stickers into 6 colour clusters. Your black “white” stickers just become one of the clusters.</p>
+      <p>• A 2×2 has <strong>no edges and no permutation constraint</strong> — the only thing that can
+      make it unsolvable is a twisted corner. That’s exactly what this checks.</p>
+      <p>• Even lighting helps a lot. After scanning, tap any square to fix a mis-read colour.</p>
+    </div>
+
+    <button id="startCam">Start camera &amp; scan</button>
+    <button id="startManual" class="ghost" style="margin-top:10px">Enter cube manually instead</button>
+    <p id="camNote" class="hint" style="margin-top:10px"></p>
+  </section>
+
+  <section id="capture" class="hidden">
+    <div class="capbar">
+      <div class="facelabel">Scan: <span id="faceName">Up</span></div>
+      <div class="dots" id="dots"></div>
+    </div>
+    <div class="stage">
+      <video id="video" playsinline autoplay muted></video>
+      <canvas id="overlay"></canvas>
+    </div>
+    <p class="hint" id="faceHint"></p>
+    <div class="row"><button id="capBtn">Capture face</button></div>
+    <div class="row" style="margin-top:10px">
+      <button id="backFace" class="secondary">Back</button>
+      <button id="cancelScan" class="ghost">Cancel</button>
+    </div>
+    <canvas id="work" class="hidden"></canvas>
+  </section>
+
+  <section id="result" class="hidden">
+    <h1>Your 2×2 cube</h1>
+    <p class="hint">Tap any square to correct its colour. The analysis updates live.</p>
+    <div class="netwrap"><div class="net" id="net"></div></div>
+    <div class="legend" id="legend"></div>
+
+    <div id="verdict"></div>
+    <div class="card analysis" id="analysis"></div>
+    <div id="fixes"></div>
+
+    <div class="row" style="margin-top:14px"><button id="rescan" class="secondary">Re-scan</button></div>
+  </section>
+
+  <div class="footer"><small>Runs entirely on your device — nothing is uploaded.</small></div>
+</div>
+
+<script>
+/* ============================================================
+   2x2 (Pocket Cube) model
+   Faces U R F D L B, 4 facelets each (row-major TL,TR,BL,BR):
+     U 0-3  R 4-7  F 8-11  D 12-15  L 16-19  B 20-23
+   Corner facelets derived from the 3x3 Kociemba model; the FIRST
+   facelet of each corner is on the U or D face (canonical order).
+   ============================================================ */
+const FACES=['U','R','F','D','L','B'];
+const FACE_NAMES={U:'Up (top)',R:'Right',F:'Front',D:'Down (bottom)',L:'Left',B:'Back'};
+const FACE_HINT={
+  U:'Tilt the TOP of the cube toward the camera so you look straight down at it. Keep the same side facing your body as the “front”. The bottom row is the edge nearest you.',
+  R:'Turn the cube so the RIGHT-hand face points at the camera, top up.',
+  F:'Show the FRONT face flat to the camera, top up.',
+  D:'Tilt the BOTTOM of the cube up toward the camera, front side still nearest you. The top row is the edge nearest you.',
+  L:'Turn the cube so the LEFT-hand face points at the camera, top up.',
+  B:'Show the BACK face to the camera, top up (turn the cube 180°).'
+};
+const cornerFacelet=[[3,4,9],[2,8,17],[0,16,21],[1,20,5],[13,11,6],[12,10,19],[14,18,23],[15,7,22]];
+const cornerName=['URF','UFL','ULB','UBR','DFR','DLF','DBL','DRB'];
+const N=2;                                   // 2x2 sampling grid
+
+let stream=null, curFaceIdx=0;
+const sampled={};        // faceKey -> [4 rgb]
+let classes=null;        // [{rgb,name}] length 6
+let facelets=null;       // length 24, class index 0..5
+
+const $=id=>document.getElementById(id);
+const secIntro=$('intro'), secCap=$('capture'), secRes=$('result');
+const video=$('video'), overlay=$('overlay'), work=$('work');
+
+/* ---- colour helpers ---- */
+function dist2(a,b){const dr=a[0]-b[0],dg=a[1]-b[1],db=a[2]-b[2];return dr*dr+dg*dg+db*db;}
+function rgbCss(c){return `rgb(${c[0]|0},${c[1]|0},${c[2]|0})`;}
+const PALETTE=[
+  {n:'black',c:[25,25,25]},{n:'white',c:[235,235,235]},{n:'grey',c:[130,130,130]},
+  {n:'red',c:[190,40,40]},{n:'orange',c:[225,120,25]},{n:'yellow',c:[235,210,40]},
+  {n:'green',c:[40,170,80]},{n:'blue',c:[40,90,200]}
+];
+function nameColor(rgb){let best=PALETTE[0],bd=1e9;for(const p of PALETTE){const d=dist2(rgb,p.c);if(d<bd){bd=d;best=p;}}return best.n;}
+
+/* ---- k-means (k=6) with k-means++ init, few restarts ---- */
+function kmeans(points,k){
+  let best=null,bestInertia=Infinity;
+  for(let attempt=0;attempt<10;attempt++){
+    let cents=[points[Math.floor(Math.random()*points.length)].slice()];
+    while(cents.length<k){
+      const d=points.map(p=>Math.min(...cents.map(c=>dist2(p,c))));
+      const sum=d.reduce((a,b)=>a+b,0)||1;
+      let r=Math.random()*sum,idx=0;
+      while(idx<d.length-1&&r>d[idx]){r-=d[idx];idx++;}
+      cents.push(points[idx].slice());
+    }
+    let assign=new Array(points.length).fill(0);
+    for(let it=0;it<30;it++){
+      assign=points.map(p=>{let b=0,bd=1e18;cents.forEach((c,i)=>{const dd=dist2(p,c);if(dd<bd){bd=dd;b=i;}});return b;});
+      const sums=Array.from({length:k},()=>[0,0,0,0]);
+      points.forEach((p,i)=>{const a=assign[i];sums[a][0]+=p[0];sums[a][1]+=p[1];sums[a][2]+=p[2];sums[a][3]++;});
+      cents=sums.map((s,i)=>s[3]?[s[0]/s[3],s[1]/s[3],s[2]/s[3]]:cents[i]);
+    }
+    const inertia=points.reduce((a,p,i)=>a+dist2(p,cents[assign[i]]),0);
+    if(inertia<bestInertia){bestInertia=inertia;best={cents,assign};}
+  }
+  return best;
+}
+
+/* ============================================================
+   Camera
+   ============================================================ */
+async function startCamera(){
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:1280}},audio:false});
+    video.srcObject=stream;await video.play();
+    secIntro.classList.add('hidden');secCap.classList.remove('hidden');
+    curFaceIdx=0;buildDots();showFace();requestAnimationFrame(drawOverlay);
+  }catch(err){
+    $('camNote').textContent='Camera unavailable ('+err.name+'). '+
+      (location.protocol!=='https:'&&location.hostname!=='localhost'
+        ?'A camera needs HTTPS — open this page over https or use “Enter manually”.'
+        :'Check permissions, or use “Enter manually”.');
+  }
+}
+function stopCamera(){if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}}
+function buildDots(){$('dots').innerHTML='';FACES.forEach((f,i)=>{const d=document.createElement('div');
+  d.className='dot'+(sampled[f]?' done':'')+(i===curFaceIdx?' active':'');$('dots').appendChild(d);});}
+function showFace(){const f=FACES[curFaceIdx];$('faceName').textContent=FACE_NAMES[f];
+  $('faceHint').textContent=FACE_HINT[f];$('backFace').disabled=curFaceIdx===0;buildDots();}
+
+function drawOverlay(){
+  if(secCap.classList.contains('hidden'))return;
+  const w=overlay.width=overlay.clientWidth,h=overlay.height=overlay.clientHeight;
+  const ctx=overlay.getContext('2d');ctx.clearRect(0,0,w,h);
+  const side=Math.min(w,h)*0.82,ox=(w-side)/2,oy=(h-side)/2,cell=side/N;
+  ctx.strokeStyle='rgba(255,255,255,.9)';ctx.lineWidth=2;ctx.strokeRect(ox,oy,side,side);
+  ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=1.5;
+  for(let i=1;i<N;i++){ctx.beginPath();ctx.moveTo(ox+i*cell,oy);ctx.lineTo(ox+i*cell,oy+side);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(ox,oy+i*cell);ctx.lineTo(ox+side,oy+i*cell);ctx.stroke();}
+  ctx.fillStyle='rgba(255,255,255,.35)';
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){ctx.beginPath();ctx.arc(ox+c*cell+cell/2,oy+r*cell+cell/2,5,0,7);ctx.fill();}
+  requestAnimationFrame(drawOverlay);
+}
+function captureFace(){
+  const vw=video.videoWidth,vh=video.videoHeight;if(!vw)return;
+  work.width=vw;work.height=vh;
+  const ctx=work.getContext('2d',{willReadFrequently:true});ctx.drawImage(video,0,0,vw,vh);
+  const side=Math.min(vw,vh)*0.82,ox=(vw-side)/2,oy=(vh-side)/2,cell=side/N;
+  const arr=[];
+  for(let r=0;r<N;r++)for(let c=0;c<N;c++){
+    const cx=ox+c*cell+cell/2,cy=oy+r*cell+cell/2,s=Math.max(6,cell*0.3);
+    const d=ctx.getImageData(cx-s/2,cy-s/2,s,s).data;let R=0,G=0,B=0,n=0;
+    for(let i=0;i<d.length;i+=4){R+=d[i];G+=d[i+1];B+=d[i+2];n++;}
+    arr.push([R/n,G/n,B/n]);
+  }
+  sampled[FACES[curFaceIdx]]=arr;
+  if(curFaceIdx<5){curFaceIdx++;showFace();}else finishScan();
+}
+
+/* ============================================================
+   Cluster -> build facelets
+   ============================================================ */
+function calibrate(){
+  const pts=[];FACES.forEach(f=>sampled[f].forEach(rgb=>pts.push(rgb)));  // 24 in facelet order
+  const {cents,assign}=kmeans(pts,6);
+  classes=cents.map(c=>({rgb:[c[0],c[1],c[2]],name:nameColor(c)}));
+  facelets=assign.slice();
+}
+function finishScan(){
+  stopCamera();calibrate();
+  secCap.classList.add('hidden');secRes.classList.remove('hidden');
+  renderNet();renderLegend();analyze();window.scrollTo(0,0);
+}
+
+/* ============================================================
+   Editable net
+   ============================================================ */
+const NET_POS={U:[0,2],L:[2,0],F:[2,2],R:[2,4],B:[2,6],D:[4,2]};
+function renderNet(){
+  const net=$('net');net.innerHTML='';
+  FACES.forEach(f=>{
+    const [r,c]=NET_POS[f];
+    const g=document.createElement('div');g.className='facegrid';
+    g.style.gridColumn=`${c+1}/span 2`;g.style.gridRow=`${r+1}/span 2`;
+    const lab=document.createElement('div');lab.className='flabel';lab.textContent=f;g.appendChild(lab);
+    const base=FACES.indexOf(f)*4;
+    for(let k=0;k<4;k++){
+      const idx=base+k;const st=document.createElement('div');st.className='st';st.dataset.idx=idx;
+      st.style.background=rgbCss(classes[facelets[idx]].rgb);
+      st.addEventListener('click',()=>cycle(idx));g.appendChild(st);
+    }
+    net.appendChild(g);
+  });
+}
+function cycle(idx){facelets[idx]=(facelets[idx]+1)%6;renderNet();analyze();}
+function renderLegend(){
+  const l=$('legend');l.innerHTML='';
+  classes.forEach((cl,i)=>{const it=document.createElement('div');it.className='item';
+    it.innerHTML=`<span class="swatch" style="background:${rgbCss(cl.rgb)}"></span>${cl.name}`;l.appendChild(it);});
+}
+
+/* ============================================================
+   2x2 analysis — twist parity is the ONLY solvability obstruction
+   ============================================================ */
+function analyze(){
+  const cls=i=>facelets[i];
+
+  // counts: each of 6 colours must appear 4 times
+  const counts=Array(6).fill(0);for(let i=0;i<24;i++)counts[cls(i)]++;
+  const countsOk=counts.every(c=>c===4);
+
+  // adjacency + opposite colours (opposites never share a corner)
+  const adj=Array.from({length:6},()=>new Set());
+  cornerFacelet.forEach(f=>{const cs=f.map(cls);
+    for(let a=0;a<3;a++)for(let b=0;b<3;b++)if(a!==b&&cs[a]!==cs[b])adj[cs[a]].add(cs[b]);});
+  const opp=Array(6).fill(-1);
+  for(let c=0;c<6;c++){const cand=[];for(let j=0;j<6;j++)if(j!==c&&!adj[c].has(j))cand.push(j);if(cand.length===1)opp[c]=cand[0];}
+  const oppOk=opp.every((o,c)=>o>=0&&opp[o]===c);
+
+  const sets=cornerFacelet.map(f=>f.map(cls));
+  let piecesValid=countsOk&&oppOk&&new Set(sets.map(s=>s.slice().sort().join(','))).size===8;
+  sets.forEach(s=>{if(new Set(s).size!==3)piecesValid=false;});
+
+  // twist sum (axis-independent verdict): use any opposite pair as U/D
+  let twistSum=0,twistDefined=false;
+  if(piecesValid){const ud=new Set([0,opp[0]]);let s=0,ok=true;
+    cornerFacelet.forEach(f=>{let o=-1;for(let j=0;j<3;j++)if(ud.has(cls(f[j])))o=j;if(o<0)ok=false;else s+=o;});
+    twistDefined=ok;twistSum=((s%3)+3)%3;}
+  const solvable=piecesValid&&twistDefined&&twistSum===0;
+
+  // majority-vote frame -> which corner is twisted (robust to one twist)
+  let frameOk=false,faceCol={},co=[],cp=[],solvedExcept=false;
+  if(piecesValid){
+    const maj=f=>{const base=FACES.indexOf(f)*4,cnt={};for(let k=0;k<4;k++){const c=facelets[base+k];cnt[c]=(cnt[c]||0)+1;}
+      let bc=-1,bn=-1;for(const c in cnt)if(cnt[c]>bn){bn=cnt[c];bc=+c;}return bc;};
+    faceCol={U:maj('U'),R:maj('R'),F:maj('F'),D:maj('D'),L:maj('L'),B:maj('B')};
+    const vals=FACES.map(f=>faceCol[f]);
+    frameOk=new Set(vals).size===6&&opp[faceCol.U]===faceCol.D&&opp[faceCol.R]===faceCol.L&&opp[faceCol.F]===faceCol.B;
+    if(frameOk){
+      const c2f={};FACES.forEach(f=>c2f[faceCol[f]]=f);const ud=new Set([faceCol.U,faceCol.D]);
+      cornerFacelet.forEach((f,i)=>{let o=-1;for(let j=0;j<3;j++)if(ud.has(cls(f[j])))o=j;co[i]=o<0?0:o;
+        const fs=f.map(x=>c2f[cls(x)]).sort().join('');
+        cp[i]=cornerName.findIndex(nm=>nm.split('').sort().join('')===fs);});
+      solvedExcept=cp.every((p,i)=>p===i)&&twistSum!==0;
+    }
+  }
+
+  renderAnalysis({counts,countsOk,piecesValid,twistSum,solvable});
+  renderFixes({piecesValid,countsOk,twistSum,solvable,frameOk,solvedExcept,co});
+  highlightTwisted(solvedExcept?co:null,twistSum);
+}
+
+function renderAnalysis(a){
+  const pill=(ok,txt)=>`<span class="pill ${ok?'good':'bad'}">${txt}</span>`;
+  const line=(k,v)=>`<div class="line"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+  const cnt=classes.map((c,i)=>`${c.name}:${a.counts[i]}`).join(' · ');
+  $('analysis').innerHTML=
+    line('Sticker counts (need 4 each)',pill(a.countsOk,a.countsOk?'OK':'off'))+
+    `<div class="line"><span class="k" style="font-size:.78rem">${cnt}</span><span></span></div>`+
+    line('All 8 corners valid',pill(a.piecesValid,a.piecesValid?'OK':'invalid'))+
+    line('Corner-twist parity (Σ mod 3)',pill(a.twistSum===0,a.twistSum===0?'0 — OK':a.twistSum));
+}
+
+function highlightTwisted(co,twistSum){
+  document.querySelectorAll('.st.tw').forEach(e=>e.classList.remove('tw'));
+  if(!co||twistSum===0)return;
+  cornerFacelet.forEach((f,i)=>{if(co[i]!==0)f.forEach(idx=>{
+    const el=document.querySelector(`.st[data-idx="${idx}"]`);if(el)el.classList.add('tw');});});
+}
+function cornerColorSwatches(i){return cornerFacelet[i].map(idx=>{const cl=classes[facelets[idx]];
+  return `<span class="swatch" style="background:${rgbCss(cl.rgb)}" title="${cl.name}"></span>`;}).join('');}
+function cornerColorNames(i){return cornerFacelet[i].map(idx=>classes[facelets[idx]].name).join(', ');}
+
+function renderFixes(a){
+  const box=$('fixes');box.innerHTML='';const v=$('verdict');
+
+  if(!a.countsOk||!a.piecesValid){
+    v.className='verdict no';
+    v.innerHTML=`<h2>⚠️ Scan needs fixing</h2>
+      <p>Some colours were read incorrectly, so the cube can't be analysed yet. Tap the squares in the
+      net above to correct them — each colour must appear exactly 4 times and every corner must be a real piece.</p>`;
+    return;
+  }
+  if(a.solvable){
+    v.className='verdict ok';
+    v.innerHTML=`<h2>✅ This 2×2 is solvable</h2>
+      <p>No twisted corner. On a 2×2 that's the only thing that can make a cube impossible, so if you
+      can't solve it, it's a technique problem — not a broken cube.</p>`;
+    return;
+  }
+
+  v.className='verdict no';
+  v.innerHTML=`<h2>❌ This 2×2 can't be solved as-is</h2>
+    <ul class="reasons"><li><strong>Twisted corner</strong> — the corner-orientation total is
+    ${a.twistSum} (must be 0). A corner is physically rotated in its slot.</li></ul>
+    <p>Fix the twist below to make it solvable.</p>`;
+
+  const card=document.createElement('div');card.className='fix';
+
+  if(a.solvedExcept){
+    const twisted=a.co.map((o,i)=>({o,i})).filter(x=>x.o!==0);
+    card.innerHTML=`<h2 style="margin-top:0">How to twist it back</h2>
+      <p>Your cube is otherwise solved, so the twisted corner${twisted.length>1?'s are':' is'} easy to pinpoint.
+      Look at each corner below and twist it in place (or pull it out and reinsert it rotated):</p>`;
+    twisted.forEach(({o,i})=>{
+      const dir=o===1?['ccw','counter-clockwise (⟲)']:['cw','clockwise (⟳)'];
+      card.innerHTML+=`
+        <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px">
+          <div class="cc"><div class="swatches">${cornerColorSwatches(i)}</div>
+            <span>the <b>${cornerColorNames(i)}</b> corner</span></div>
+          <div>Twist it <span class="twist ${dir[0]}">${dir[1]}</span> by one third of a turn.</div>
+        </div>`;
+    });
+  }else{
+    const need=a.twistSum===1?['ccw','counter-clockwise (⟲)']:['cw','clockwise (⟳)'];
+    card.innerHTML=`<h2 style="margin-top:0">How to twist it back</h2>
+      <p>The cube is scrambled, so the twist is a whole-cube property rather than one obvious corner.
+      The total is off by <b>${a.twistSum}</b>. To make it solvable you need one net
+      <span class="twist ${need[0]}">${need[1]}</span> third-turn of a single corner.</p>
+      <ol class="steps">
+        <li>Pick <em>any one</em> corner piece.</li>
+        <li>Pull it out (a 2×2 corner pops off easily) or twist it in place.</li>
+        <li>Reinsert/rotate it <span class="twist ${need[0]}">${need[1]}</span> by one third of a turn.</li>
+        <li>Re-scan — the corner-twist parity should read <b>0</b>.</li>
+      </ol>
+      <p class="hint">Tip: solve the cube as far as you can first; whichever corner refuses to orient is the one that was tampered with.</p>`;
+  }
+  box.appendChild(card);
+}
+
+/* ============================================================
+   Manual entry (no camera) — start from a solved cube
+   ============================================================ */
+function startManual(){
+  const seed=[[40,40,40],[200,50,50],[40,160,70],[230,205,50],[235,120,30],[45,80,200]];
+  classes=seed.map(c=>({rgb:c.slice(),name:nameColor(c)}));
+  facelets=[];FACES.forEach((f,fi)=>{for(let k=0;k<4;k++)facelets.push(fi);});
+  secIntro.classList.add('hidden');secRes.classList.remove('hidden');
+  renderNet();renderLegend();analyze();
+}
+
+/* ---- wiring ---- */
+$('startCam').addEventListener('click',startCamera);
+$('startManual').addEventListener('click',startManual);
+$('capBtn').addEventListener('click',captureFace);
+$('backFace').addEventListener('click',()=>{if(curFaceIdx>0){curFaceIdx--;showFace();}});
+$('cancelScan').addEventListener('click',()=>{stopCamera();secCap.classList.add('hidden');secIntro.classList.remove('hidden');});
+$('rescan').addEventListener('click',()=>{for(const k in sampled)delete sampled[k];secRes.classList.add('hidden');startCamera();});
+
+$('camNote').textContent=(location.protocol==='https:'||location.hostname==='localhost'||location.hostname==='127.0.0.1')
+  ?'':'Note: phone cameras require HTTPS. Open this page over https for the scanner, or use “Enter manually”.';
+</script>
+</body>
+</html>

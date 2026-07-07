@@ -8,6 +8,11 @@ bug) — tell you **which corner** and **which direction to twist it back**.
 Open [`index.html`](index.html) — that's the whole app. No build step, no
 dependencies, nothing is uploaded.
 
+> **2×2 (Pocket Cube)?** There's a dedicated version in [`2x2/`](2x2/index.html)
+> (served at `/awscosts/2x2/`). A 2×2 has no centres — colours are learned by
+> clustering all 24 stickers — and no edges or permutation constraint, so a
+> **twisted corner is the only thing** that can make it unsolvable.
+
 ## Using it on your phone
 
 The camera API requires a secure context (HTTPS or `localhost`). Easiest options:
