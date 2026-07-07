@@ -63,6 +63,9 @@
   .brknum{flex:0 0 auto;width:24px;height:24px;border-radius:13px;color:#0f1115;font-weight:800;
     font-size:.82rem;line-height:24px;text-align:center}
   .arrow{font-size:1.3rem;font-weight:800;line-height:1}
+  .movelist{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 4px}
+  .move{display:inline-block;min-width:40px;text-align:center;padding:9px 11px;border-radius:9px;
+    background:var(--accent);color:#fff;font-weight:800;font-size:1.05rem;font-variant-numeric:tabular-nums}
   .netwrap{overflow-x:auto;padding-top:18px}
   .analysis .line{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
   .analysis .line:last-child{border-bottom:0}
@@ -109,6 +112,7 @@
       <p>• It <strong>tries every possible twist</strong> and, when your cube is solved apart from the
       defect, <strong>highlights the exact broken corner</strong> with a coloured border and tells you
       which way to turn it. (Scrambled? It still gives you a foolproof way to make the cube valid again.)</p>
+      <p>• If the cube is <strong>valid, it solves it for you</strong> — a shortest turn-by-turn solution, computed on your phone.</p>
       <p>• Even lighting helps a lot. After scanning, tap any square to fix a mis-read colour.</p>
     </div>
 
@@ -199,6 +203,57 @@ function searchTwist(fl){
   sols.sort((a,b)=>a.count-b.count);
   return sols;
 }
+
+/* ---- optimal 2x2 solver: bidirectional BFS over corner cubies, U/R/F turns,
+   with the back-bottom-left (DBL) corner held fixed as the colour frame ---- */
+const cornerFaces=[['U','R','F'],['U','F','L'],['U','L','B'],['U','B','R'],['D','F','R'],['D','L','F'],['D','B','L'],['D','R','B']];
+const _BASE={U:{cp:[3,0,1,2,4,5,6,7],co:[0,0,0,0,0,0,0,0]},
+             R:{cp:[4,1,2,0,7,5,6,3],co:[2,0,0,1,1,0,0,2]},
+             F:{cp:[1,5,2,3,0,4,6,7],co:[1,2,0,0,2,1,0,0]}};
+function _mul(A,B){const cp=Array(8),co=Array(8);
+  for(let i=0;i<8;i++){cp[i]=A.cp[B.cp[i]];co[i]=(A.co[B.cp[i]]+B.co[i])%3;}return{cp,co};}
+const SOLVED_ST={cp:[0,1,2,3,4,5,6,7],co:[0,0,0,0,0,0,0,0]};
+const SOLVE_MOVES=[];
+for(const f of ['U','R','F']){const q=_BASE[f],q2=_mul(q,q),q3=_mul(q2,q);
+  SOLVE_MOVES.push({name:f,cp:q.cp,co:q.co},{name:f+'2',cp:q2.cp,co:q2.co},{name:f+"'",cp:q3.cp,co:q3.co});}
+const MOVE_INV={"U":"U'","U'":"U","U2":"U2","R":"R'","R'":"R","R2":"R2","F":"F'","F'":"F","F2":"F2"};
+function applyMove(st,m){const cp=Array(8),co=Array(8);
+  for(let i=0;i<8;i++){cp[i]=st.cp[m.cp[i]];co[i]=(st.co[m.cp[i]]+m.co[i])%3;}return{cp,co};}
+function stKey(st){return st.cp.join('')+':'+st.co.join('');}
+function solve2x2(start){
+  if(stKey(start)===stKey(SOLVED_ST))return[];
+  const F=new Map([[stKey(start),{move:null,prev:null}]]),B=new Map([[stKey(SOLVED_ST),{move:null,prev:null}]]);
+  let fF=[start],bF=[SOLVED_ST];
+  const recF=k=>{const p=[];let c=k;while(F.get(c).move){p.push(F.get(c).move);c=F.get(c).prev;}return p.reverse();};
+  const recB=k=>{const p=[];let c=k;while(B.get(c).move){p.push(B.get(c).move);c=B.get(c).prev;}return p;};
+  for(let d=0;d<12;d++){
+    const useF=fF.length<=bF.length, MAP=useF?F:B, frontier=useF?fF:bF, OTHER=useF?B:F, next=[];
+    for(const st of frontier){const ks=stKey(st);
+      for(const mv of SOLVE_MOVES){const ns=applyMove(st,mv),nk=stKey(ns);
+        if(MAP.has(nk))continue; MAP.set(nk,{move:mv.name,prev:ks}); next.push(ns);
+        if(OTHER.has(nk))return recF(nk).concat(recB(nk).map(n=>MOVE_INV[n]));}
+    }
+    if(useF)fF=next; else bF=next;
+  }
+  return null;
+}
+// scanned facelets -> cubie state, anchoring the frame on the DBL slot (facelets 14,18,23 = D,B,L)
+function extractCubie(fl){
+  const adj=Array.from({length:6},()=>new Set());
+  cornerFacelet.forEach(f=>{const cs=f.map(i=>fl[i]);for(let a=0;a<3;a++)for(let b=0;b<3;b++)if(a!==b&&cs[a]!==cs[b])adj[cs[a]].add(cs[b]);});
+  const opp=Array(6).fill(-1);
+  for(let c=0;c<6;c++){const cd=[];for(let j=0;j<6;j++)if(j!==c&&!adj[c].has(j))cd.push(j);if(cd.length===1)opp[c]=cd[0];}
+  const D=fl[14],B=fl[18],L=fl[23],U=opp[D],R=opp[L],F=opp[B];
+  if([U,R,F].some(x=>x==null||x<0)||new Set([U,R,F,D,L,B]).size!==6)return null;
+  const c2f={};c2f[U]='U';c2f[R]='R';c2f[F]='F';c2f[D]='D';c2f[L]='L';c2f[B]='B';
+  const sk=fs=>fs.slice().sort().join(''), solvedSets=cornerFaces.map(sk);
+  const cp=Array(8),co=Array(8);
+  for(let i=0;i<8;i++){const faces=cornerFacelet[i].map(x=>c2f[fl[x]]);
+    const which=solvedSets.indexOf(sk(faces));if(which<0)return null;cp[i]=which;
+    let o=-1;for(let j=0;j<3;j++)if(faces[j]==='U'||faces[j]==='D')o=j;if(o<0)return null;co[i]=o;}
+  return {cp,co};
+}
+function solveScan(){const ex=extractCubie(facelets);if(!ex)return null;return solve2x2(ex);}
 
 let stream=null, curFaceIdx=0;
 const sampled={};        // faceKey -> [4 rgb]
@@ -436,10 +491,26 @@ function renderFixes(a){
   // parity 0 -> solvable (no physical defect on a 2x2)
   if(a.twistSum===0){
     v.className='verdict ok';
-    v.innerHTML=a.fullySolved
-      ? `<h2>✅ Solved &amp; valid</h2><p>Every face is a single colour and all invariants check out — nothing is twisted.</p>`
-      : `<h2>✅ This 2×2 is solvable</h2><p>No twisted corner — on a 2×2 that's the only thing that can make a cube impossible. It's just scrambled, so normal turns will solve it.</p>`;
-    decorateBroken(null);return;
+    decorateBroken(null);
+    if(a.fullySolved){
+      v.innerHTML=`<h2>✅ Solved &amp; valid</h2><p>Every face is a single colour and all invariants check out — nothing is twisted.</p>`;
+      return;
+    }
+    v.innerHTML=`<h2>✅ Solvable — here's how</h2><p>No twisted corner. A shortest solution is below.</p>`;
+    const sol=solveScan();
+    const card=document.createElement('div');card.className='fix';
+    if(sol){
+      const chips=sol.map(m=>`<span class="move">${m.replace("'","′")}</span>`).join('');
+      card.innerHTML=`<h2 style="margin-top:0">Solution — ${sol.length} move${sol.length===1?'':'s'}</h2>
+        <p class="hint">Hold the cube <b>exactly as you scanned it</b>: the face you scanned as <b>Up</b> on top,
+        <b>Front</b> towards you, <b>Right</b> on the right. Don't rotate the whole cube — just turn the named faces:</p>
+        <div class="movelist">${chips}</div>
+        <p class="hint">Each letter = that face a quarter-turn <b>clockwise</b> (looking straight at it) ·
+        <b>′</b> = anticlockwise · <b>2</b> = half turn. &nbsp;<b>U</b>=Up, <b>R</b>=Right, <b>F</b>=Front. Optimal ${sol.length}-move solution.</p>`;
+    }else{
+      card.innerHTML=`<p>Couldn't compute a solution — re-check the colours in the net so every piece reads correctly.</p>`;
+    }
+    box.appendChild(card);return;
   }
 
   // parity != 0 -> a corner is physically twisted
@@ -482,7 +553,7 @@ function renderFixes(a){
         <li>Put it back <b>rotated a third of a turn</b>. A corner seats 3 ways; exactly one makes the cube legal.</li>
         <li><b>Re-scan after each try.</b> When <b>Corner-twist parity</b> reads <b>0</b> and it says “solvable”,
         that's the right seating. If it doesn't, put the same corner in one of its other rotations — one of the three is guaranteed to work.</li>
-        <li>Now any solver — or a normal solve — will work.</li>
+        <li>Now re-scan once more — the app will show you a full step-by-step solution.</li>
       </ol>
       <p class="hint">First-try shortcut: re-seat that corner a ⅓ turn <b>${need}</b> (as you look straight at it). If parity then reads ${a.twistSum===1?'2':'1'} instead of 0, you went the wrong way — use the third seating.</p>
       <p class="hint">Want to know <em>which</em> corner was originally tampered with? That's only pin-down-able once the cube is solved apart from the twist — solve everything but the last stubborn corner, then re-scan and I'll flag it.</p>`;
