@@ -49,8 +49,20 @@
   .net{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;max-width:340px;margin:8px auto}
   .facegrid{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);gap:4px;position:relative}
   .facegrid .flabel{position:absolute;top:-16px;left:0;font-size:.66rem;color:var(--muted);font-weight:700}
-  .st{aspect-ratio:1/1;border-radius:5px;border:1px solid rgba(255,255,255,.14);cursor:pointer}
+  .st{aspect-ratio:1/1;border-radius:5px;border:1px solid rgba(255,255,255,.14);cursor:pointer;position:relative}
   .st.tw{box-shadow:0 0 0 3px var(--warn),0 0 12px 2px var(--warn);z-index:2}
+  /* broken-corner highlight: thick coloured border + numbered rotation badge */
+  .st.brk{z-index:3}
+  .st.brk::after{content:"";position:absolute;inset:-3px;border-radius:7px;
+    border:3px solid var(--c);box-shadow:0 0 10px 1px var(--c);pointer-events:none}
+  .st .badge{position:absolute;top:-9px;left:-9px;z-index:4;min-width:20px;height:20px;
+    padding:0 3px;border-radius:11px;background:var(--c);color:#0f1115;font-weight:800;
+    font-size:.72rem;line-height:20px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+  .brklist{display:flex;flex-direction:column;gap:2px}
+  .brkrow{display:flex;align-items:center;gap:9px;padding:9px 0;border-top:1px solid var(--line)}
+  .brknum{flex:0 0 auto;width:24px;height:24px;border-radius:13px;color:#0f1115;font-weight:800;
+    font-size:.82rem;line-height:24px;text-align:center}
+  .arrow{font-size:1.3rem;font-weight:800;line-height:1}
   .netwrap{overflow-x:auto;padding-top:18px}
   .analysis .line{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
   .analysis .line:last-child{border-bottom:0}
@@ -94,6 +106,9 @@
       stickers into 6 colour clusters. Your black “white” stickers just become one of the clusters.</p>
       <p>• A 2×2 has <strong>no edges and no permutation constraint</strong> — the only thing that can
       make it unsolvable is a twisted corner. That’s exactly what this checks.</p>
+      <p>• It <strong>tries every possible twist</strong> and, when your cube is solved apart from the
+      defect, <strong>highlights the exact broken corner</strong> with a coloured border and tells you
+      which way to turn it. (Scrambled? Solve it first — a twist can’t be localised from colours alone.)</p>
       <p>• Even lighting helps a lot. After scanning, tap any square to fix a mis-read colour.</p>
     </div>
 
@@ -156,7 +171,34 @@ const FACE_HINT={
 };
 const cornerFacelet=[[3,4,9],[2,8,17],[0,16,21],[1,20,5],[13,11,6],[12,10,19],[14,18,23],[15,7,22]];
 const cornerName=['URF','UFL','ULB','UBR','DFR','DLF','DBL','DRB'];
+// Direction of ONE a->b->c sticker step for each corner, viewed from OUTSIDE the
+// cube looking straight at that corner. Derived geometrically (triple product) and
+// verified: the a->b->c cycle is clockwise-from-outside for every corner.
+const CORNER_DIR=['CW','CW','CW','CW','CW','CW','CW','CW'];
+// distinct highlight colours for up to 3 simultaneously-broken corners
+const BRK_COLORS=['#ffc24b','#4f8cff','#39d98a'];
 const N=2;                                   // 2x2 sampling grid
+
+/* ---- in-place corner twist + brute-force "which corner is broken" search ---- */
+// rotate corner ci's three stickers by k steps in the a->b->c direction
+function rotCorner(fl,ci,k){
+  const r=fl.slice(),[a,b,c]=cornerFacelet[ci];
+  for(let s=0;s<k;s++){const A=r[a],B=r[b],C=r[c];r[a]=C;r[b]=A;r[c]=B;}
+  return r;
+}
+function facesUniform(fl){for(let f=0;f<6;f++){const b=f*4,v=fl[b];for(let k=1;k<4;k++)if(fl[b+k]!==v)return false;}return true;}
+// Try all 3^8 combinations of in-place twists; return every combo that makes the
+// cube fully solved (all faces one colour), sorted by fewest twisted corners.
+function searchTwist(fl){
+  const sols=[];
+  for(let code=0;code<6561;code++){
+    let x=code,cur=fl,ks=[],cnt=0;
+    for(let i=0;i<8;i++){const k=x%3;x=(x-k)/3;ks.push(k);if(k){cur=rotCorner(cur,i,k);cnt++;}}
+    if(facesUniform(cur))sols.push({ks,count:cnt});
+  }
+  sols.sort((a,b)=>a.count-b.count);
+  return sols;
+}
 
 let stream=null, curFaceIdx=0;
 const sampled={};        // faceKey -> [4 rgb]
@@ -325,48 +367,60 @@ function analyze(){
     twistDefined=ok;twistSum=((s%3)+3)%3;}
   const solvable=piecesValid&&twistDefined&&twistSum===0;
 
-  // majority-vote frame -> which corner is twisted (robust to one twist)
-  let frameOk=false,faceCol={},co=[],cp=[],solvedExcept=false;
+  // Brute-force which corner(s) are physically twisted: try all 3^8 in-place
+  // twists and find the combo(s) that make the cube fully solved. Only the
+  // genuinely-twisted corner(s) can restore uniform faces, so this is unique
+  // whenever the cube is solved apart from the twist.
+  let broken=null, fullySolved=false, ambiguous=false;
   if(piecesValid){
-    const maj=f=>{const base=FACES.indexOf(f)*4,cnt={};for(let k=0;k<4;k++){const c=facelets[base+k];cnt[c]=(cnt[c]||0)+1;}
-      let bc=-1,bn=-1;for(const c in cnt)if(cnt[c]>bn){bn=cnt[c];bc=+c;}return bc;};
-    faceCol={U:maj('U'),R:maj('R'),F:maj('F'),D:maj('D'),L:maj('L'),B:maj('B')};
-    const vals=FACES.map(f=>faceCol[f]);
-    frameOk=new Set(vals).size===6&&opp[faceCol.U]===faceCol.D&&opp[faceCol.R]===faceCol.L&&opp[faceCol.F]===faceCol.B;
-    if(frameOk){
-      const c2f={};FACES.forEach(f=>c2f[faceCol[f]]=f);const ud=new Set([faceCol.U,faceCol.D]);
-      cornerFacelet.forEach((f,i)=>{let o=-1;for(let j=0;j<3;j++)if(ud.has(cls(f[j])))o=j;co[i]=o<0?0:o;
-        const fs=f.map(x=>c2f[cls(x)]).sort().join('');
-        cp[i]=cornerName.findIndex(nm=>nm.split('').sort().join('')===fs);});
-      solvedExcept=cp.every((p,i)=>p===i)&&twistSum!==0;
+    const sols=searchTwist(facelets);
+    if(sols.length){
+      const minc=sols[0].count;
+      fullySolved=(minc===0);
+      if(minc>0&&twistSum!==0){
+        ambiguous=sols.filter(s=>s.count===minc).length>1;
+        broken=[];let num=0;
+        sols[0].ks.forEach((k,i)=>{
+          if(k){const dir=(k===1)?CORNER_DIR[i]:(CORNER_DIR[i]==='CW'?'CCW':'CW');
+            broken.push({i,k,dir,color:BRK_COLORS[num%BRK_COLORS.length],num:num+1});num++;}
+        });
+      }
     }
   }
 
-  renderAnalysis({counts,countsOk,piecesValid,twistSum,solvable});
-  renderFixes({piecesValid,countsOk,twistSum,solvable,frameOk,solvedExcept,co});
-  highlightTwisted(solvedExcept?co:null,twistSum);
+  renderAnalysis({counts,countsOk,piecesValid,twistSum,broken});
+  renderFixes({piecesValid,countsOk,twistSum,fullySolved,broken,ambiguous});
 }
 
 function renderAnalysis(a){
   const pill=(ok,txt)=>`<span class="pill ${ok?'good':'bad'}">${txt}</span>`;
   const line=(k,v)=>`<div class="line"><span class="k">${k}</span><span class="v">${v}</span></div>`;
   const cnt=classes.map((c,i)=>`${c.name}:${a.counts[i]}`).join(' · ');
+  const brkTxt=a.broken?`${a.broken.length} found`:(a.piecesValid&&a.twistSum!==0?'not localised':'none');
   $('analysis').innerHTML=
     line('Sticker counts (need 4 each)',pill(a.countsOk,a.countsOk?'OK':'off'))+
     `<div class="line"><span class="k" style="font-size:.78rem">${cnt}</span><span></span></div>`+
     line('All 8 corners valid',pill(a.piecesValid,a.piecesValid?'OK':'invalid'))+
-    line('Corner-twist parity (Σ mod 3)',pill(a.twistSum===0,a.twistSum===0?'0 — OK':a.twistSum));
+    line('Corner-twist parity (Σ mod 3)',pill(a.twistSum===0,a.twistSum===0?'0 — OK':a.twistSum))+
+    line('Twisted corner(s) pinpointed',`<span class="pill ${a.broken?'bad':'good'}">${brkTxt}</span>`);
 }
 
-function highlightTwisted(co,twistSum){
-  document.querySelectorAll('.st.tw').forEach(e=>e.classList.remove('tw'));
-  if(!co||twistSum===0)return;
-  cornerFacelet.forEach((f,i)=>{if(co[i]!==0)f.forEach(idx=>{
-    const el=document.querySelector(`.st[data-idx="${idx}"]`);if(el)el.classList.add('tw');});});
+function decorateBroken(list){
+  document.querySelectorAll('.st.brk').forEach(e=>{e.classList.remove('brk');e.style.removeProperty('--c');});
+  document.querySelectorAll('.st .badge').forEach(e=>e.remove());
+  if(!list)return;
+  list.forEach(b=>cornerFacelet[b.i].forEach((idx,pos)=>{
+    const el=document.querySelector(`.st[data-idx="${idx}"]`);if(!el)return;
+    el.classList.add('brk');el.style.setProperty('--c',b.color);
+    if(pos===0){const bd=document.createElement('div');bd.className='badge';
+      bd.style.setProperty('--c',b.color);bd.textContent=b.num;el.appendChild(bd);}
+  }));
 }
 function cornerColorSwatches(i){return cornerFacelet[i].map(idx=>{const cl=classes[facelets[idx]];
   return `<span class="swatch" style="background:${rgbCss(cl.rgb)}" title="${cl.name}"></span>`;}).join('');}
 function cornerColorNames(i){return cornerFacelet[i].map(idx=>classes[facelets[idx]].name).join(', ');}
+
+function dirText(d){return d==='CW'?['cw','clockwise','↻']:['ccw','counter-clockwise','↺'];}
 
 function renderFixes(a){
   const box=$('fixes');box.innerHTML='';const v=$('verdict');
@@ -376,51 +430,60 @@ function renderFixes(a){
     v.innerHTML=`<h2>⚠️ Scan needs fixing</h2>
       <p>Some colours were read incorrectly, so the cube can't be analysed yet. Tap the squares in the
       net above to correct them — each colour must appear exactly 4 times and every corner must be a real piece.</p>`;
-    return;
-  }
-  if(a.solvable){
-    v.className='verdict ok';
-    v.innerHTML=`<h2>✅ This 2×2 is solvable</h2>
-      <p>No twisted corner. On a 2×2 that's the only thing that can make a cube impossible, so if you
-      can't solve it, it's a technique problem — not a broken cube.</p>`;
-    return;
+    decorateBroken(null);return;
   }
 
+  // parity 0 -> solvable (no physical defect on a 2x2)
+  if(a.twistSum===0){
+    v.className='verdict ok';
+    v.innerHTML=a.fullySolved
+      ? `<h2>✅ Solved &amp; valid</h2><p>Every face is a single colour and all invariants check out — nothing is twisted.</p>`
+      : `<h2>✅ This 2×2 is solvable</h2><p>No twisted corner — on a 2×2 that's the only thing that can make a cube impossible. It's just scrambled, so normal turns will solve it.</p>`;
+    decorateBroken(null);return;
+  }
+
+  // parity != 0 -> a corner is physically twisted
   v.className='verdict no';
   v.innerHTML=`<h2>❌ This 2×2 can't be solved as-is</h2>
     <ul class="reasons"><li><strong>Twisted corner</strong> — the corner-orientation total is
-    ${a.twistSum} (must be 0). A corner is physically rotated in its slot.</li></ul>
-    <p>Fix the twist below to make it solvable.</p>`;
+    ${a.twistSum} (must be 0). A corner is physically rotated in its slot.</li></ul>`;
 
   const card=document.createElement('div');card.className='fix';
 
-  if(a.solvedExcept){
-    const twisted=a.co.map((o,i)=>({o,i})).filter(x=>x.o!==0);
-    card.innerHTML=`<h2 style="margin-top:0">How to twist it back</h2>
-      <p>Your cube is otherwise solved, so the twisted corner${twisted.length>1?'s are':' is'} easy to pinpoint.
-      Look at each corner below and twist it in place (or pull it out and reinsert it rotated):</p>`;
-    twisted.forEach(({o,i})=>{
-      const dir=o===1?['ccw','counter-clockwise (⟲)']:['cw','clockwise (⟳)'];
-      card.innerHTML+=`
-        <div style="border-top:1px solid var(--line);padding-top:10px;margin-top:10px">
-          <div class="cc"><div class="swatches">${cornerColorSwatches(i)}</div>
-            <span>the <b>${cornerColorNames(i)}</b> corner</span></div>
-          <div>Twist it <span class="twist ${dir[0]}">${dir[1]}</span> by one third of a turn.</div>
-        </div>`;
+  if(a.broken){
+    const many=a.broken.length>1;
+    card.innerHTML=`<h2 style="margin-top:0">Found the broken corner${many?'s':''}</h2>
+      <p>I tried every possible in-place twist (all 3<sup>8</sup> combinations). ${many?'These are the corners':'This is the corner'}
+      that, twisted back, make the cube fully solved — matched to the highlighted ${many?'squares':'square'} in the net above:</p>
+      <div class="brklist"></div>
+      <p class="hint">Direction is as you look <b>straight at that corner from outside</b> the cube. It's only a
+      one-third turn, so if it looks wrong go the other way. Lever the corner off (2×2 corners pop out easily) or twist it in place, then re-scan.</p>
+      ${a.ambiguous?'<p class="hint">⚠️ More than one twist combination fits — the cube isn\'t quite solved apart from the twist, so treat this as a best guess.</p>':''}`;
+    const lst=card.querySelector('.brklist');
+    a.broken.forEach(b=>{
+      const [cl,word,arrow]=dirText(b.dir);
+      const row=document.createElement('div');row.className='brkrow';
+      row.innerHTML=`<span class="brknum" style="background:${b.color}">${b.num}</span>
+        <span class="swatches">${cornerColorSwatches(b.i)}</span>
+        <span>the <b>${cornerColorNames(b.i)}</b> corner — twist
+        <span class="arrow ${cl}">${arrow}</span> <span class="twist ${cl}">${word}</span> a ⅓ turn</span>`;
+      lst.appendChild(row);
     });
+    decorateBroken(a.broken);
   }else{
-    const need=a.twistSum===1?['ccw','counter-clockwise (⟲)']:['cw','clockwise (⟳)'];
-    card.innerHTML=`<h2 style="margin-top:0">How to twist it back</h2>
-      <p>The cube is scrambled, so the twist is a whole-cube property rather than one obvious corner.
-      The total is off by <b>${a.twistSum}</b>. To make it solvable you need one net
-      <span class="twist ${need[0]}">${need[1]}</span> third-turn of a single corner.</p>
+    // unsolvable twist but the cube is scrambled -> can't localise from colour alone
+    const need=a.twistSum===1?'counter-clockwise ↺':'clockwise ↻';
+    card.innerHTML=`<h2 style="margin-top:0">Solve it first to pinpoint the corner</h2>
+      <p>There's definitely a twisted corner (the parity is off by <b>${a.twistSum}</b>), but the cube is
+      scrambled — and a corner twist is a whole-cube property, so from the colours alone the exact corner
+      can't be singled out yet.</p>
       <ol class="steps">
-        <li>Pick <em>any one</em> corner piece.</li>
-        <li>Pull it out (a 2×2 corner pops off easily) or twist it in place.</li>
-        <li>Reinsert/rotate it <span class="twist ${need[0]}">${need[1]}</span> by one third of a turn.</li>
-        <li>Re-scan — the corner-twist parity should read <b>0</b>.</li>
+        <li>Solve the 2×2 as far as you can with normal turns.</li>
+        <li>Because of the defect you'll get everything solved but <em>one</em> corner that refuses to orient.</li>
+        <li>Re-scan — I'll then highlight that exact corner and which way to twist it.</li>
       </ol>
-      <p class="hint">Tip: solve the cube as far as you can first; whichever corner refuses to orient is the one that was tampered with.</p>`;
+      <p class="hint">Or just neutralise the parity now: twist any one corner a ⅓ turn <b>${need}</b> and re-scan.</p>`;
+    decorateBroken(null);
   }
   box.appendChild(card);
 }
