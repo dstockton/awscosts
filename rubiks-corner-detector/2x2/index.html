@@ -108,7 +108,7 @@
       make it unsolvable is a twisted corner. That’s exactly what this checks.</p>
       <p>• It <strong>tries every possible twist</strong> and, when your cube is solved apart from the
       defect, <strong>highlights the exact broken corner</strong> with a coloured border and tells you
-      which way to turn it. (Scrambled? Solve it first — a twist can’t be localised from colours alone.)</p>
+      which way to turn it. (Scrambled? It still gives you a foolproof way to make the cube valid again.)</p>
       <p>• Even lighting helps a lot. After scanning, tap any square to fix a mis-read colour.</p>
     </div>
 
@@ -471,18 +471,21 @@ function renderFixes(a){
     });
     decorateBroken(a.broken);
   }else{
-    // unsolvable twist but the cube is scrambled -> can't localise from colour alone
+    // unsolvable twist on a scrambled cube -> can't localise, but the repair is easy
     const need=a.twistSum===1?'counter-clockwise ↺':'clockwise ↻';
-    card.innerHTML=`<h2 style="margin-top:0">Solve it first to pinpoint the corner</h2>
-      <p>There's definitely a twisted corner (the parity is off by <b>${a.twistSum}</b>), but the cube is
-      scrambled — and a corner twist is a whole-cube property, so from the colours alone the exact corner
-      can't be singled out yet.</p>
+    card.innerHTML=`<h2 style="margin-top:0">Make it a valid cube again</h2>
+      <p>As-is your cube is <b>physically impossible</b> (corner-twist total ${a.twistSum}, must be 0) —
+      that's why other solver apps reject it. It's <b>not a scan error</b>: the cube itself can't be solved
+      until one corner is re-seated. The good news — <b>any</b> corner will do.</p>
       <ol class="steps">
-        <li>Solve the 2×2 as far as you can with normal turns.</li>
-        <li>Because of the defect you'll get everything solved but <em>one</em> corner that refuses to orient.</li>
-        <li>Re-scan — I'll then highlight that exact corner and which way to twist it.</li>
+        <li>Pop out <b>any one</b> corner. Turn a face ~45° and lever the corner up with a fingernail or a flat tool — 2×2 corners come out easily.</li>
+        <li>Put it back <b>rotated a third of a turn</b>. A corner seats 3 ways; exactly one makes the cube legal.</li>
+        <li><b>Re-scan after each try.</b> When <b>Corner-twist parity</b> reads <b>0</b> and it says “solvable”,
+        that's the right seating. If it doesn't, put the same corner in one of its other rotations — one of the three is guaranteed to work.</li>
+        <li>Now any solver — or a normal solve — will work.</li>
       </ol>
-      <p class="hint">Or just neutralise the parity now: twist any one corner a ⅓ turn <b>${need}</b> and re-scan.</p>`;
+      <p class="hint">First-try shortcut: re-seat that corner a ⅓ turn <b>${need}</b> (as you look straight at it). If parity then reads ${a.twistSum===1?'2':'1'} instead of 0, you went the wrong way — use the third seating.</p>
+      <p class="hint">Want to know <em>which</em> corner was originally tampered with? That's only pin-down-able once the cube is solved apart from the twist — solve everything but the last stubborn corner, then re-scan and I'll flag it.</p>`;
     decorateBroken(null);
   }
   box.appendChild(card);
